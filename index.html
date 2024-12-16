@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+</head>
+<body>
+    <h1>Conectando a Billeterea</h1>
+    <button id="btnConnect" onclick="connectWallet()">Conectar Billetera</button>
+    <button id="btnDisconnect" onclick="disconnectWallet()" style="display: none;">Desconectar Billetera</button>
+    
+    <p id="status">Estado: No conectado</p>
+    <p id="ethBalance" style="display: none;">Balance de la Billetera:</p>
+
+    <!-- Sección de gestión de liquidez -->
+    <section>
+        <h2>Gestion de liquidez (Agregar o quitar liquidez debes ser en pares)</h2>
+        <label for="liquidityA">Monto Token A:</label>
+        <input type="number" id="liquidityA" placeholder="Monto Token A">
+        <label for="liquidityB">Monto Token B</label>
+        <input type="number" id="liquidityB" placeholder="Monto Token B">
+        <button id="btnAddLiquidity" onclick="addLiquidity()" style="display: none;">Agregar Liquidez al DEX</button>
+        <button id="btnRemoveLiquidity" onclick="removeLiquidity()" style="display: none;">Quitar Liquidez del DEX</button>
+    </section>
+
+    <!-- Sección de intercambio de tokens -->
+    <section>
+        <h2>Token Swap</h2>
+        <label for="swapA">Monto Token A:</label>
+        <input type="number" id="swapA" placeholder="Monto Token A">
+        <button id="btnAtoB" onclick="swap('AtoB')" style="display: none;">Swap TokenA a TokenB</button>
+        <br>
+        <label for="swapB">Monto Token B:</label>
+        <input type="number" id="swapB" placeholder="Monto Token B">
+        <button id="btnBtoA" onclick="swap('BtoA')" style="display: none;">Swap TokenB a TokenA</button>
+    </section>
+
+    <!-- Sección de reservas de liquidez -->
+    <section>
+        <h2>DEX Reserves</h2>
+        <p>Reserva Token A: <span id="reserveA">Espera conexion de la billetera...</span></p>
+        <p>Reserva Token B: <span id="reserveB">Espera conexion de la billetera...</span></p>
+        <button id="btnRefreshReserve" onclick="getReserves()" style="display: none;">Actualizar Reservas</button>
+    </section>
+
+    <!-- Sección de balance-->
+    <section>
+        <h2>Balance</h2>
+        <p>Balance Token A: <span id="TokenA">Espera conexion de la billetera...</span></p>
+        <p>Balance Token B: <span id="TokenB">Espera conexion de la billetera...</span></p>
+        <button id="btnRefreshBalance" onclick="getBalances()" style="display: none;">Actualizar Balance de Tokens</button>
+    </section>
+
+    <!-- Sección de Precio-->
+    <section>
+        <h2>Precio</h2>
+        <p>Precio Token A: <span id="PrecioA">Espera conexion de la billetera...</span></p>
+        <p>Precio Token B: <span id="PrecioB">Espera conexion de la billetera...</span></p>
+        <button id="btnRefreshPrecio" onclick="getPrice()" style="display: none;">Actualizar Precios</button>
+    </section>
+</body>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wallet Connect</title>
+    <script type="module">
+        import { ethers } from "https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.min.js";
+
+        // Direcciones y ABIs de los tokens
+        const tokenAAddress = "0x43aB59082e40E366517181BC8b09761F38e6389A"; // Reemplaza con la dirección del Token A
+        const tokenAABI = [
+            "function balanceOf(address) view returns (uint256)",
+            "function decimals() view returns (uint8)",
+            "function approve(address spender, uint256 amount) public returns (bool)"
+        ];
+
+        const tokenBAddress = "0xB6D4Df030Cc40d344d2121A17Ae19B8d5DC97C01"; // Reemplaza con la dirección del Token B
+        const tokenBABI = [
+            "function balanceOf(address) view returns (uint256)",
+            "function decimals() view returns (uint8)",
+            "function approve(address spender, uint256 amount) public returns (bool)"
+        ];
+
+        // Direcciones y ABI del contrato DEX
+        const dexAddress = "0x9acEB09D9eb9d7e6df66257D6C46131814Ef4e47"; // Reemplaza con la dirección de tu contrato DEX
+        const dexABI = [
+            "function addLiquidity(uint256 amountA, uint256 amountB) public",
+            "function removeLiquidity(uint256 amountA, uint256 amountB) public",
+            "function swapAforB(uint256 amountAIn) external",
+            "function swapBforA(uint256 amountBIn) external",
+            "function getReserves() view returns (uint256 reverveA, uint256 reserveB)",
+            "function getPrice(address) view returns(uint256)"
+        ];
+
+        let provider, signer, tokenAContract, tokenBContract, dexContract;
+
+        // Función para conectar la wallet
+        async function connectWallet() {
+            try {
+                if (!window.ethereum) {
+                    alert("MetaMask no está instalado. Por favor, instálalo para usar esta aplicación.");
+                    return;
+                }
+
+                // Solicitar acceso a MetaMask
+                await ethereum.request({ method: "eth_requestAccounts" });
+                provider = new ethers.BrowserProvider(window.ethereum);
+                signer = await provider.getSigner();
+
+                tokenAContract = new ethers.Contract(tokenAAddress, tokenAABI, signer);
+                tokenBContract = new ethers.Contract(tokenBAddress, tokenBABI, signer);
+                dexContract = new ethers.Contract(dexAddress, dexABI, signer);
+
+                const address = await signer.getAddress();
+                const balance = await provider.getBalance(address);
+                const formattedBalance = ethers.formatEther(balance);
+
+                // Obtener balances de los tokens
+                const tokenABalance = await getTokenBalance(address, signer, tokenAAddress, tokenAABI);
+                const tokenBBalance = await getTokenBalance(address, signer, tokenBAddress, tokenBABI);
+
+                // Mostrar información en la interfaz
+                document.getElementById('btnConnect').style.display = 'none';
+                document.getElementById('btnDisconnect').style.display = 'inline';
+                document.getElementById('btnRefreshReserve').style.display = 'inline';
+                document.getElementById('btnRefreshBalance').style.display = 'inline';
+                document.getElementById('btnRefreshPrecio').style.display = 'inline';
+                document.getElementById('btnAddLiquidity').style.display = 'inline';
+                document.getElementById('btnRemoveLiquidity').style.display = 'inline';
+                document.getElementById('btnAtoB').style.display = 'inline';
+                document.getElementById('btnBtoA').style.display = 'inline';
+
+                document.getElementById('status').innerText = `Estado: Conectado a la Billetera ${address}`;
+                document.getElementById('ethBalance').style.display = 'block';
+
+                document.getElementById('ethBalance').innerText = `Balance de Wallet: ${formattedBalance} ETH`;
+
+                await getBalances();
+                await getReserves();
+                await getPrice();
+            } catch (error) {
+                console.error("Error conectando la wallet:", error);
+                alert("No se pudo conectar la wallet. Verifica la consola para más detalles.");
+            }
+        }
+
+        // Función para desconectar la wallet
+        function disconnectWallet() {
+            document.getElementById('btnConnect').style.display = 'inline';
+            document.getElementById('btnDisconnect').style.display = 'none';
+            document.getElementById('ethBalance').style.display = 'none';
+            document.getElementById('btnAddLiquidity').style.display = 'none';
+            document.getElementById('btnRemoveLiquidity').style.display = 'none';
+            document.getElementById('btnAtoB').style.display = 'none';
+            document.getElementById('btnBtoA').style.display = 'none';
+            document.getElementById('btnRefreshReserve').style.display = 'none';
+            document.getElementById('btnRefreshBalance').style.display = 'none';
+            document.getElementById('btnRefreshPrecio').style.display = 'none';
+
+            document.getElementById('status').innerText = "Estado: Desconectado";
+            document.getElementById('TokenA').innerText = 'Espera conexion de la billetera...'
+            document.getElementById('TokenB').innerText = 'Espera conexion de la billetera...';
+            document.getElementById("reserveA").innerText = 'Espera conexion de la billetera...';
+            document.getElementById("reserveB").innerText = 'Espera conexion de la billetera...';
+            document.getElementById('PrecioA').innerText = 'Espera conexion de la billetera...';
+            document.getElementById('PrecioB').innerText = 'Espera conexion de la billetera...';
+        }
+
+        // Función para obtener balance de un token ERC20
+        async function getTokenBalance(address, signer, tokenAddress, tokenABI) {
+            try {
+                const tokenContract = new ethers.Contract(tokenAddress, tokenABI, signer);
+                const decimals = await tokenContract.decimals();
+                const tokenBalance = await tokenContract.balanceOf(address);
+                return ethers.formatUnits(tokenBalance, decimals);
+            } catch (error) {
+                console.error(`Error obteniendo balance del token en ${tokenAddress}:`, error);
+                alert("Error al obtener balance. Verifica la consola para más detalles.");
+                return "Error al obtener balance";
+            }
+        }
+
+        // Función para agregar liquidez
+        async function addLiquidity() {
+            try {
+                const amountA = ethers.parseUnits(document.getElementById("liquidityA").value, 18);
+                const amountB = ethers.parseUnits(document.getElementById("liquidityB").value, 18);
+            
+                // Aprobar ambos tokens
+                const approveTxA = await tokenAContract.approve(dexAddress, amountA);
+                await approveTxA.wait();  // Esperar que se confirme la transacción
+
+                const approveTxB = await tokenBContract.approve(dexAddress, amountB);
+                await approveTxB.wait();  // Esperar que se confirme la transacción
+            
+                // Llamar a la función de añadir liquidez
+                const addLiquidityTx = await dexContract.addLiquidity(amountA, amountB);
+                await addLiquidityTx.wait();  // Esperar que se confirme la transacción de liquidez
+            
+                alert("Liquidez agregada con exito");
+                await getBalances();
+                await getReserves();
+                await getPrice();
+            } catch (error) {
+                console.error("Error al agregar liquidez", error);
+                alert("Fallo agregar liquidez. Verifica la consola para más detalles.");
+            }
+        }
+
+        async function removeLiquidity() {
+            try {
+                // Obtener los valores de los campos de entrada
+                const amountA = ethers.parseUnits(document.getElementById("liquidityA").value, 18);
+                const amountB = ethers.parseUnits(document.getElementById("liquidityB").value, 18);
+            
+                // Llamar a la función del contrato `removeLiquidity` con los parámetros correctos
+                const removeLiquidityTx = await dexContract.removeLiquidity(amountA, amountB);
+            
+                // Esperar que se confirme la transacción
+                await removeLiquidityTx.wait();
+            
+                alert("Se quito liquidez del DEX con exito");
+                await getBalances();
+                await getReserves();
+                await getPrice();
+            } catch (error) {
+                console.error("Error quitando liquidez del DEX", error);
+                alert("Fallo quitar liquidez del DEX. Verifica la consola para más detalles.");
+            }
+        }
+
+        // Función para realizar intercambio (swap)
+        async function swap(direction) {
+            try {
+                if (direction === "AtoB") {
+                    const amountA = ethers.parseUnits(document.getElementById("swapA").value, 18);
+
+                    // Configurar allowance para Token A
+                    const approveTx = await tokenAContract.approve(dexAddress, amountA);
+                    await approveTx.wait();
+                
+                    const swapTx = await dexContract.swapAforB(amountA);
+                    await swapTx.wait();
+                    alert("Swap TokenA por TokenB ejecutado exitosamente");
+                } else if (direction === "BtoA") {
+                    const amountB = ethers.parseUnits(document.getElementById("swapB").value, 18);
+                
+                    // Configurar allowance para Token B
+                    const approveTx = await tokenBContract.approve(dexAddress, amountB);
+                    await approveTx.wait();
+                
+                    const swapTx = await dexContract.swapBforA(amountB);
+                    await swapTx.wait();
+                    alert("Swap TokenB por TokenA ejecutado exitosamente");
+                }
+            
+                await getBalances();
+                await getReserves();
+                await getPrice();
+            } catch (error) {
+                console.error("Error ejecutando el swap:", error);
+                alert("Falló el intercambio. Verifica la consola para más detalles.");
+            }
+        }
+
+        // Función para obtener las reservas de liquidez del DEX
+        async function getReserves() {
+            try {
+                const [reserveA, reserveB] = await dexContract.getReserves();
+           
+                document.getElementById("reserveA").innerText = ethers.formatUnits(reserveA, 18);
+                document.getElementById("reserveB").innerText = ethers.formatUnits(reserveB, 18);
+            } catch (error) {
+                console.error("Error obteniendo reservas:", error);
+                alert("No se pudieron obtener las reservas. Verifica la consola para más detalles.");
+            }
+        }
+
+        // Función para actualizar los balances
+        async function getBalances() {
+            try{
+            const address = await signer.getAddress();
+
+            const tokenABalance = await getTokenBalance(address, signer, tokenAAddress, tokenAABI);
+            const tokenBBalance = await getTokenBalance(address, signer, tokenBAddress, tokenBABI);
+
+            document.getElementById('TokenA').innerText = ` ${tokenABalance}`;
+            document.getElementById('TokenB').innerText = ` ${tokenBBalance}`;
+            }
+            catch (error) {
+                console.error("Error obteniendo los balances:", error);
+                alert("No se pudieron obtener los balances. Verifica la consola para más detalles.");
+            }
+        }
+
+        // Función para actualizar los precios
+        async function getPrice() {
+            try {
+                // Llama a la función getPrice con las direcciones de los tokens
+                const priceA = await dexContract.getPrice(tokenAAddress);
+                const priceB = await dexContract.getPrice(tokenBAddress);
+                    
+                // Convierte los precios a un formato legible (si es necesario)
+                const formattedPriceA = ethers.formatUnits(priceA, 18);
+                const formattedPriceB = ethers.formatUnits(priceB, 18);
+                    
+                // Muestra los precios en la interfaz
+                document.getElementById('PrecioA').innerText = `${formattedPriceA} TokenB por TokenA`;
+                document.getElementById('PrecioB').innerText = `${formattedPriceB} TokenA por TokenB`;
+            } catch (error) {
+                console.error("Error obteniendo los precios:", error);
+                alert("No se pudieron obtener los precios. Verifica la consola para más detalles.");
+            }
+        }
+
+        // Exportar funciones globalmente
+        window.connectWallet = connectWallet;
+        window.disconnectWallet = disconnectWallet;
+        window.addLiquidity = addLiquidity;
+        window.removeLiquidity = removeLiquidity;
+        window.swap = swap;
+        window.getReserves = getReserves;
+        window.getBalances = getBalances;
+        window.getPrice = getPrice;
+    </script>
+</html>
